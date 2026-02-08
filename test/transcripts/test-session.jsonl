@@ -1,0 +1,9 @@
+{"type": "message", "message": {"role": "user", "content": "Hey, I need help setting up a new project"}}
+{"type": "message", "message": {"role": "assistant", "content": "Sure! What kind of project are you working on?"}}
+{"type": "message", "message": {"role": "user", "content": "A Python web app with FastAPI"}}
+{"type": "message", "message": {"role": "assistant", "content": [{"type": "text", "text": "Great choice! Let me set up the project structure..."}, {"type": "toolCall", "name": "exec", "id": "123", "arguments": {"command": "mkdir -p myapp && cd myapp && touch main.py"}}]}}
+{"type": "message", "message": {"role": "toolResult", "toolCallId": "123", "content": [{"type": "text", "text": "Directory created successfully"}]}}
+{"type": "message", "message": {"role": "assistant", "content": "I've created the project structure. Now let me add the FastAPI boilerplate..."}}
+{"type": "message", "message": {"role": "user", "content": "Can you also add a requirements.txt?"}}
+{"type": "message", "message": {"role": "assistant", "content": [{"type": "text", "text": "Adding requirements.txt now..."}, {"type": "toolCall", "name": "Write", "id": "456", "arguments": {"path": "myapp/requirements.txt"}}]}}
+{"type": "message", "message": {"role": "toolResult", "toolCallId": "456", "content": [{"type": "text", "text": "File written"}]}}

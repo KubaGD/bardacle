@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  bardacle:
+    build: .
+    container_name: bardacle
+    restart: unless-stopped
+    
+    environment:
+      # Cloud API keys (optional)
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      
+      # Local LLM (if running on host)
+      - BARDACLE_LOCAL_URL=http://host.docker.internal:1234
+      
+      # Paths (inside container)
+      - BARDACLE_TRANSCRIPTS_DIR=/data/transcripts
+      - BARDACLE_STATE_FILE=/data/output/session-state.md
+    
+    volumes:
+      # Mount your agent's transcript directory
+      - ./test/transcripts:/data/transcripts:ro
+      
+      # Mount output directory for session state
+      - ./test/output:/data/output
+      
+      # Optional: mount config
+      # - ./config.yaml:/app/config.yaml:ro
+    
+    # For accessing host's LM Studio
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Optional: Test with a mock transcript generator
+  mock-agent:
+    image: python:3.11-slim
+    container_name: mock-agent
+    volumes:
+      - ./test/transcripts:/data/transcripts
+    command: >
+      python -c "
+      import json, time, random
+      from pathlib import Path
+      
+      transcript = Path('/data/transcripts/test-session.jsonl')
+      transcript.parent.mkdir(parents=True, exist_ok=True)
+      
+      messages = [
+          {'role': 'user', 'content': 'Hello, can you help me with a task?'},
+          {'role': 'assistant', 'content': 'Of course! What do you need help with?'},
+          {'role': 'user', 'content': 'I need to deploy my application'},
+          {'role': 'assistant', 'content': 'Let me help you with that deployment...'},
+      ]
+      
+      with open(transcript, 'w') as f:
+          for msg in messages:
+              entry = {'type': 'message', 'message': msg}
+              f.write(json.dumps(entry) + '\n')
+      
+      print('Mock transcript created')
+      time.sleep(3600)  # Keep running
+      "
+    profiles:
+      - test
