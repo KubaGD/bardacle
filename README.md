@@ -1,252 +1,331 @@
 # 🐚 Bardacle
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
+
 **A metacognitive layer for AI agents.**
 
 Bardacle watches your agent's session transcript and maintains a real-time "session state" summary. When context gets compacted or sessions restart, your agent can read this state to pick up exactly where it left off.
 
-Think of it as short-term memory that survives context loss.
+Think of it as **short-term memory that survives context loss**.
+
+<p align="center">
+  <img src="assets/logo.svg" alt="Bardacle Logo" width="150">
+</p>
 
 ---
 
-## The Problem
+## ✨ Features
 
-AI agents forget. Long conversations get compacted, losing detail. Sessions restart with no memory. Multi-tasking fragments focus. Your agent asks "where were we?" and you have to re-explain everything.
-
-## The Solution
-
-Bardacle runs alongside your agent as a background daemon:
-
-1. **Watches** your session transcript in real-time
-2. **Summarizes** tool calls so the agent knows what it *did*, not just what it *said*
-3. **Extracts** current goal, active tasks, blockers, next steps
-4. **Writes** a session-state file your agent reads at each response
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Agent Session Transcript                                    │
-│            ↓                                                 │
-│  Bardacle watches for new messages                          │
-│            ↓                                                 │
-│  Summarizes: [exec] script.py → ✓                           │
-│            ↓                                                 │
-│  Extracts: goal, tasks, decisions, blockers                 │
-│            ↓                                                 │
-│  Writes session-state.md                                    │
-│            ↓                                                 │
-│  Agent reads this → knows what it was doing                 │
-└─────────────────────────────────────────────────────────────┘
-```
+- **🧠 Metacognitive Awareness** — Tracks what the agent is working on, not just conversation history
+- **🔧 Tool Awareness** — Summarizes tool calls (`[exec] deploy.sh → ✓`) so the agent knows what happened
+- **🏠 Local-First** — Uses local LLMs (LM Studio, Ollama) by default, keeping your data private
+- **☁️ Cloud Fallback** — Falls back to Groq → OpenAI when local fails
+- **⚡ Rate Limit Detection** — Automatically skips rate-limited providers
+- **📊 Incremental Updates** — Updates existing state instead of regenerating from scratch
+- **📈 Metrics Logging** — Tracks latency, model used, messages analyzed
+- **🐳 Docker Ready** — Run containerized with one command
 
 ---
 
-## Features
+## 🚀 Quick Start
 
-- **🧠 Metacognitive Awareness**: Tracks what the agent is working on, not just conversation history
-- **🔧 Tool Awareness**: Summarizes tool calls (`[exec] deploy.sh → ✓`) so the agent knows what happened
-- **🏠 Local-First**: Uses local LLMs (LM Studio, Ollama) by default
-- **☁️ Cloud Fallback**: Falls back to Groq → OpenAI when local fails
-- **⚡ Rate Limit Detection**: Skips rate-limited providers automatically
-- **📊 Incremental Updates**: Updates existing state instead of regenerating
-- **📈 Metrics Logging**: Tracks latency, model used, messages analyzed
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.10+
-- Local LLM server (LM Studio, Ollama) OR cloud API keys (Groq, OpenAI)
-
-### Installation
+### Install
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/bardacle.git
+git clone https://github.com/StellarSk8board/bardacle.git
 cd bardacle
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Copy example config
-cp config.example.yaml config.yaml
+# Install
+pip install -e .
 ```
 
-### Configuration
+### Configure
 
-Edit `config.yaml`:
+```bash
+# Copy example config
+cp config.example.yaml config.yaml
 
+# Edit with your paths
+nano config.yaml
+```
+
+Minimal config:
 ```yaml
-inference:
-  # Local LLM (primary)
-  local_url: "http://localhost:1234"
-  local_model: "qwen2.5-coder-7b-instruct"
-  
-  # Cloud fallbacks (optional)
-  groq_api_key: "${GROQ_API_KEY}"  # or set env var
-  openai_api_key: "${OPENAI_API_KEY}"
-
 transcripts:
-  # Path to your agent's session transcripts
   dir: "~/.your-agent/sessions"
   pattern: "*.jsonl"
 
 output:
-  # Where to write the session state
   state_file: "~/.your-agent/session-state.md"
 ```
 
 ### Run
 
 ```bash
+# Test the setup
+bardacle test
+
 # Start the daemon
-python -m bardacle start
+bardacle start
 
 # Check status
-python -m bardacle status
+bardacle status
+```
 
-# Force an update
-python -m bardacle update
+### Integrate with Your Agent
 
-# Stop the daemon
-python -m bardacle stop
+Add to your agent's instructions:
+```
+"At the start of each response, read session-state.md for current context."
+```
+
+That's it! Your agent now has persistent short-term memory.
+
+---
+
+## 📖 How It Works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Agent Session                                               │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ User: Help me deploy my app                             ││
+│  │ Agent: Sure! Let me check the config... [exec] cat...   ││
+│  │ Agent: Found an issue. Fixing now... [Write] config.yml ││
+│  │ User: Great, now run the tests                          ││
+│  └─────────────────────────────────────────────────────────┘│
+│                            │                                 │
+│                            ▼                                 │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │  📝 Transcript (JSONL)                                  ││
+│  └─────────────────────────────────────────────────────────┘│
+└──────────────────────────────│──────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│  🐚 Bardacle                                                 │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐ │
+│  │ Watch          │→ │ Summarize      │→ │ Extract State  │ │
+│  │ Transcript     │  │ Tool Calls     │  │ via LLM        │ │
+│  └────────────────┘  └────────────────┘  └────────────────┘ │
+│                                                    │         │
+│                                                    ▼         │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │  session-state.md                                       ││
+│  │  ─────────────────                                      ││
+│  │  Current Goal: Deploy the application                   ││
+│  │  Active Tasks: Run tests (in progress)                  ││
+│  │  Recent: Fixed config issue                             ││
+│  │  Next: Execute test suite                               ││
+│  └─────────────────────────────────────────────────────────┘│
+└──────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Agent reads session-state.md → Knows what it was doing     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Session State Format
+## 🔧 Configuration
 
-Bardacle generates a markdown file your agent can read:
+### Environment Variables
+
+```bash
+# Cloud API keys (optional but recommended for fallback)
+export GROQ_API_KEY="gsk_..."
+export OPENAI_API_KEY="sk-..."
+
+# Override config paths
+export BARDACLE_TRANSCRIPTS_DIR="/path/to/sessions"
+export BARDACLE_STATE_FILE="/path/to/session-state.md"
+export BARDACLE_LOCAL_URL="http://localhost:1234"
+```
+
+### Full Config Example
+
+```yaml
+inference:
+  local_url: "http://localhost:1234"
+  local_model_fast: "qwen2.5-coder-7b-instruct"
+  local_model_smart: "qwen3-coder-30b-a3b-instruct"
+  local_timeout: 15
+  groq_model: "llama-3.1-8b-instant"
+  openai_model: "gpt-4o-mini"
+  cloud_timeout: 30
+
+transcripts:
+  dir: "~/.agent/sessions"
+  pattern: "*.jsonl"
+
+processing:
+  max_messages: 100
+  max_message_chars: 500
+  debounce_seconds: 5
+  force_update_interval: 120
+  poll_interval: 2
+
+output:
+  state_file: "~/.agent/session-state.md"
+  log_file: "~/.bardacle/bardacle.log"
+  metrics_file: "~/.bardacle/metrics.jsonl"
+```
+
+---
+
+## 📊 Fallback Chain
+
+Bardacle tries inference in this order:
+
+```
+1. Local LLM (15s timeout)     ─── Fast, free, private
+         │
+         ▼ (timeout/error)
+2. Groq Cloud                  ─── Fast, free tier
+         │
+         ▼ (rate limit/error)
+3. OpenAI                      ─── Reliable fallback
+         │
+         ▼ (error)
+4. Local Smart Model           ─── Last resort
+```
+
+Rate limit detection: When Groq returns 429, Bardacle skips it for 60 seconds.
+
+---
+
+## 🐳 Docker
+
+### Quick Start
+
+```bash
+docker run -d \
+  -e GROQ_API_KEY="your-key" \
+  -v /path/to/transcripts:/data/transcripts:ro \
+  -v /path/to/output:/data/output \
+  ghcr.io/stellarsk8board/bardacle:latest
+```
+
+### With Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  bardacle:
+    image: ghcr.io/stellarsk8board/bardacle:latest
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - BARDACLE_LOCAL_URL=http://host.docker.internal:1234
+    volumes:
+      - ./transcripts:/data/transcripts:ro
+      - ./output:/data/output
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+---
+
+## 📄 Session State Format
+
+Bardacle generates a markdown file:
 
 ```markdown
 # Session State
 
 *Auto-generated at 2026-02-07 21:30:15*
-*Model: groq | Latency: 16.3s | Messages: 100*
+*Model: groq | Latency: 0.4s | Messages: 50*
+
+---
 
 ## Current Goal
-Implement user authentication for the web app
+Deploy the web application to production
 
 ## Active Tasks
-- [in progress] Set up OAuth2 with Google
-- [blocked] Waiting for API credentials from client
-- [done] Database schema for users
+- [done] Fix configuration issue
+- [in progress] Run test suite
+- [pending] Deploy to production
 
 ## Recent Decisions
-- Using JWT tokens instead of sessions
-- PostgreSQL over MongoDB for this project
+- Using Docker for deployment
+- PostgreSQL over MySQL for the database
 
 ## Blockers
-- Need Google OAuth credentials from client
+None
 
 ## Next Steps
-1. Create OAuth callback endpoint
-2. Test login flow locally
-3. Deploy to staging
+1. Wait for tests to complete
+2. Review test results
+3. Deploy if all tests pass
 
 ## Key Context
-- Client: Acme Corp
-- Deadline: Friday
-- Repo: github.com/acme/webapp
+- App: FastAPI web service
+- Environment: Production
+- Deployment target: AWS ECS
 ```
 
 ---
 
-## Transcript Format
+## 📚 Documentation
 
-Bardacle expects JSONL transcripts with this structure:
-
-```jsonl
-{"type": "message", "message": {"role": "user", "content": "Deploy the app"}}
-{"type": "message", "message": {"role": "assistant", "content": [{"type": "text", "text": "Deploying now..."}]}}
-{"type": "message", "message": {"role": "toolResult", "toolCallId": "123", "content": [{"type": "text", "text": "Deployed successfully"}]}}
-```
-
-For other formats, see [Transcript Adapters](docs/adapters.md).
+- **[Installation Guide](docs/installation.md)** — Detailed setup instructions
+- **[Quickstart](docs/quickstart.md)** — Get running in 5 minutes
+- **[Transcript Adapters](docs/adapters.md)** — Support different formats
+- **[Troubleshooting](docs/troubleshooting.md)** — Common issues and solutions
+- **[FAQ](docs/faq.md)** — Frequently asked questions
 
 ---
 
-## Fallback Chain
+## 🧪 Development
 
-Bardacle tries inference in this order:
+```bash
+# Clone
+git clone https://github.com/StellarSk8board/bardacle.git
+cd bardacle
 
-1. **Local LLM** (15s timeout) - Fast, free, private
-2. **Groq** - Fast cloud, generous free tier
-3. **OpenAI** - Reliable fallback
-4. **Local 30B** - Smarter local model as last resort
+# Install dev dependencies
+pip install -e ".[dev]"
 
-If Groq returns 429 (rate limited), Bardacle skips it for 60 seconds.
+# Run tests
+python -m bardacle test
 
----
-
-## Integration Examples
-
-### OpenClaw
-
-```yaml
-# In your AGENTS.md or startup instructions
-"Read session-state.md at the start of each response for continuity."
-```
-
-### LangChain
-
-```python
-from langchain.memory import ReadOnlySharedMemory
-
-# Point to Bardacle's output
-state = open("~/.agent/session-state.md").read()
-memory = ReadOnlySharedMemory(memory_key="session_state", value=state)
-```
-
-### Custom Agent
-
-```python
-# At the start of each agent turn
-def get_context():
-    state_file = Path("~/.agent/session-state.md")
-    if state_file.exists():
-        return state_file.read_text()
-    return ""
+# Run with local changes
+PYTHONPATH=src python -m bardacle update
 ```
 
 ---
 
-## Why "Bardacle"?
-
-- **Bard**: A keeper of stories and memory
-- **Barnacle**: Attaches itself, persistent, goes where you go
-
-It's also a nod to the crustacean theme of [OpenClaw](https://github.com/openclaw/openclaw) (claw → crab → barnacle).
-
----
-
-## Research Background
-
-Bardacle is a practical implementation of metacognitive AI patterns:
-
-- **Microsoft's AI Agents for Beginners**: Metacognition as "thinking about thinking"
-- **SOFAI Architecture**: Slow/fast/metacognitive reasoning layers
-- **Letta/MemGPT**: Stateful agents with persistent memory
-- **momentiq**: Plan-Learn-Reflect-Evolve cycles
-
-The key insight: **Reasoning is about completing the task. Metacognition is about managing how the task is completed.**
-
----
-
-## Contributing
+## 🤝 Contributing
 
 Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+- 🐛 [Report bugs](https://github.com/StellarSk8board/bardacle/issues)
+- 💡 [Request features](https://github.com/StellarSk8board/bardacle/issues)
+- 🔧 [Submit pull requests](https://github.com/StellarSk8board/bardacle/pulls)
+
 ---
 
-## License
+## 📜 License
 
 MIT License. See [LICENSE](LICENSE).
 
 ---
 
-## Credits
+## 🙏 Credits
 
-Created by Bob (an AI agent) with Blair at [OpenClaw](https://github.com/openclaw/openclaw).
+Created by **Bob** (an AI agent) with **Blair** at [OpenClaw](https://github.com/openclaw/openclaw).
 
-*"The light is yours."* 💀
+Built on research from:
+- Microsoft's AI Agents metacognition patterns
+- SOFAI (Slow/Fast AI) architecture
+- Letta/MemGPT stateful agents
+- momentiq's Plan-Learn-Reflect-Evolve cycles
+
+---
+
+<p align="center">
+  <i>"The bard remembers, so you don't have to."</i> 🐚
+</p>
