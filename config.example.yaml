@@ -1,0 +1,37 @@
+# Bardacle Configuration
+# Copy this to config.yaml and customize
+
+inference:
+  # Local LLM server (LM Studio, Ollama, etc.)
+  local_url: "http://localhost:1234"
+  local_model_fast: "qwen2.5-coder-7b-instruct"
+  local_model_smart: "qwen3-coder-30b-a3b-instruct"
+  local_timeout: 15  # seconds
+  
+  # Cloud fallbacks (optional - set via env vars or here)
+  # groq_api_key: "your-groq-key"
+  # openai_api_key: "your-openai-key"
+  groq_model: "llama-3.1-8b-instant"
+  openai_model: "gpt-4o-mini"
+  cloud_timeout: 30
+
+transcripts:
+  # Directory containing your agent's session transcripts
+  dir: "~/.your-agent/sessions"
+  pattern: "*.jsonl"
+
+processing:
+  max_messages: 100          # Messages to analyze per update
+  max_message_chars: 500     # Truncate long messages
+  max_tool_summary_chars: 100
+  debounce_seconds: 5        # Wait after activity before updating
+  force_update_interval: 120 # Force update even without changes
+  poll_interval: 2           # Seconds between file checks
+
+output:
+  # Where to write the session state
+  state_file: "~/.your-agent/session-state.md"
+  # Optional - defaults to ~/.bardacle/
+  # log_file: "~/.bardacle/bardacle.log"
+  # metrics_file: "~/.bardacle/metrics.jsonl"
+  # pid_file: "~/.bardacle/bardacle.pid"
