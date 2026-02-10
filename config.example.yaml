@@ -1,37 +1,43 @@
 # Bardacle Configuration
-# Copy this to config.yaml and customize
+# Copy to config.yaml and customize
 
 inference:
-  # Local LLM server (LM Studio, Ollama, etc.)
+  # Local LLM (LM Studio, etc.)
   local_url: "http://localhost:1234"
   local_model_fast: "qwen2.5-coder-7b-instruct"
   local_model_smart: "qwen3-coder-30b-a3b-instruct"
-  local_timeout: 15  # seconds
+  local_timeout: 15
   
-  # Cloud fallbacks (optional - set via env vars or here)
-  # groq_api_key: "your-groq-key"
-  # openai_api_key: "your-openai-key"
+  # Ollama (alternative local LLM)
+  ollama_url: "http://localhost:11434"
+  ollama_model: "llama3.2"
+  
+  # Cloud providers (set via env vars for security)
+  # groq_api_key: ""      # Use GROQ_API_KEY env var
+  # openai_api_key: ""    # Use OPENAI_API_KEY env var
   groq_model: "llama-3.1-8b-instant"
   openai_model: "gpt-4o-mini"
   cloud_timeout: 30
+  
+  # Health check settings (P0 fix)
+  health_check_timeout: 2  # Quick ping timeout in seconds
 
 transcripts:
-  # Directory containing your agent's session transcripts
-  dir: "~/.your-agent/sessions"
+  # Where to find session transcripts
+  dir: "~/.openclaw/agents/main/sessions"
   pattern: "*.jsonl"
 
 processing:
-  max_messages: 100          # Messages to analyze per update
-  max_message_chars: 500     # Truncate long messages
-  max_tool_summary_chars: 100
-  debounce_seconds: 5        # Wait after activity before updating
-  force_update_interval: 120 # Force update even without changes
-  poll_interval: 2           # Seconds between file checks
+  max_messages: 100           # Max messages to analyze
+  max_message_chars: 500      # Truncate long messages
+  max_tool_summary_chars: 100 # Truncate tool summaries
+  debounce_seconds: 5         # Wait after change before update
+  force_update_interval: 120  # Force update every N seconds
+  poll_interval: 2            # Check for changes every N seconds
 
 output:
-  # Where to write the session state
-  state_file: "~/.your-agent/session-state.md"
-  # Optional - defaults to ~/.bardacle/
-  # log_file: "~/.bardacle/bardacle.log"
-  # metrics_file: "~/.bardacle/metrics.jsonl"
-  # pid_file: "~/.bardacle/bardacle.pid"
+  state_file: "~/.openclaw/workspace/memory/session-state.md"
+  log_file: "~/.bardacle/bardacle.log"
+  metrics_file: "~/.bardacle/metrics.jsonl"
+  pid_file: "~/.bardacle/bardacle.pid"
+  backup_count: 5  # Number of backups to keep (P0 fix)

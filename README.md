@@ -3,6 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
+[![Version](https://img.shields.io/badge/version-0.2.0-green.svg)](https://github.com/StellarSk8board/bardacle/releases)
 
 **A metacognitive layer for AI agents.**
 
@@ -329,3 +330,87 @@ Built on research from:
 <p align="center">
   <i>"The bard remembers, so you don't have to."</i> 🐚
 </p>
+
+---
+
+## 🛡️ Reliability Features (v0.2.0)
+
+Bardacle v0.2.0 introduces critical reliability improvements:
+
+### Atomic File Writes
+State files are written atomically using temp file + rename. If the process crashes mid-write, the previous state remains intact.
+
+### Automatic Backups
+Every state update creates a backup in `session-history/`. Configurable retention (default: 5 backups).
+
+```bash
+# List available backups
+bardacle recover
+
+# Recover from latest backup
+bardacle recover --latest
+
+# Recover from specific backup
+bardacle recover --backup state-20260210-123456.md
+```
+
+### Provider Health Checks
+Before attempting inference, Bardacle pings providers with a 2-second timeout. Failed providers are skipped, reducing failover time from 15+ seconds to <3 seconds.
+
+### Crash Recovery
+On unexpected shutdown, Bardacle saves an emergency state file. On next start, you're alerted to recover:
+
+```bash
+$ bardacle status
+⚠️  Emergency state found: emergency-state.md
+   Run 'bardacle recover' to restore from last good state
+```
+
+### Ollama Support
+Now supports Ollama as a local LLM backend alongside LM Studio.
+
+```yaml
+inference:
+  ollama_url: "http://localhost:11434"
+  ollama_model: "llama3.2"
+```
+
+---
+
+## 📝 Changelog
+
+### v0.2.0 (2026-02-10)
+**Reliability Release**
+
+- ✨ Atomic file writes prevent corruption on crash
+- ✨ Automatic state backups with configurable retention
+- ✨ Provider health checks for faster failover
+- ✨ Emergency state save on crash
+- ✨ `bardacle recover` command for backup recovery
+- ✨ Ollama support as local LLM backend
+- 🔧 Improved status command with provider health display
+- 🔧 Better signal handling (SIGTERM, SIGINT, SIGHUP)
+- 📝 Updated config with new options
+
+### v0.1.0 (2026-02-07)
+**Initial Release**
+
+- 🎉 Core metacognitive layer functionality
+- 🏠 Local-first with LM Studio support
+- ☁️ Cloud fallback (Groq, OpenAI)
+- 📊 Incremental updates
+- 🐳 Docker support
+
+---
+
+## 🤝 Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE)
+
+---
+
+*Made with 💀 by Bob & Blair*

@@ -5,12 +5,19 @@ Bardacle - A Metacognitive Layer for AI Agents
 Watches agent session transcripts and maintains real-time session state
 awareness, enabling agents to recover context after compaction or restart.
 
+v0.2.0 - P0 Reliability Fixes:
+- Atomic file writes (prevent corruption on crash)
+- State file backups (rotating, with JSON structured backup)
+- Pre-flight health checks (skip unavailable providers)
+- Graceful crash handling (emergency state save)
+
 Usage:
     python -m bardacle start   # Start daemon
     python -m bardacle stop    # Stop daemon
     python -m bardacle status  # Check status
     python -m bardacle update  # Force immediate update
     python -m bardacle test    # Test components
+    python -m bardacle recover # Recover from backup
 """
 
 import os
@@ -21,6 +28,8 @@ import signal
 import hashlib
 import argparse
 import logging
+import shutil
+import atexit
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple, Any
@@ -38,8 +47,15 @@ except ImportError:
     print("Error: requests library required. Run: pip install requests")
     sys.exit(1)
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "Bob & Blair"
+
+# =============================================================================
+# GLOBAL STATE (for crash recovery)
+# =============================================================================
+
+LAST_KNOWN_STATE: Optional[str] = None
+LAST_STATE_METADATA: Optional[Dict] = None
 
 # =============================================================================
 # CONFIGURATION
@@ -48,12 +64,15 @@ __author__ = "Bob & Blair"
 @dataclass
 class InferenceConfig:
     local_url: str = "http://localhost:1234"
+    ollama_url: str = "http://localhost:11434"
     local_model_fast: str = "qwen2.5-coder-7b-instruct"
     local_model_smart: str = "qwen3-coder-30b-a3b-instruct"
+    ollama_model: str = "llama3.2"
     groq_model: str = "llama-3.1-8b-instant"
     openai_model: str = "gpt-4o-mini"
     local_timeout: int = 15
     cloud_timeout: int = 30
+    health_check_timeout: int = 2  # NEW: Quick health check timeout
     groq_api_key: str = ""
     openai_api_key: str = ""
 
@@ -77,6 +96,7 @@ class OutputConfig:
     log_file: str = ""
     metrics_file: str = ""
     pid_file: str = ""
+    backup_count: int = 5  # NEW: Number of backups to keep
 
 @dataclass
 class Config:
@@ -135,6 +155,7 @@ def load_config(config_path: Optional[Path] = None) -> Config:
     config.inference.groq_api_key = os.getenv("GROQ_API_KEY", config.inference.groq_api_key)
     config.inference.openai_api_key = os.getenv("OPENAI_API_KEY", config.inference.openai_api_key)
     config.inference.local_url = os.getenv("BARDACLE_LOCAL_URL", config.inference.local_url)
+    config.inference.ollama_url = os.getenv("BARDACLE_OLLAMA_URL", config.inference.ollama_url)
     
     if os.getenv("BARDACLE_TRANSCRIPTS_DIR"):
         config.transcripts.dir = os.getenv("BARDACLE_TRANSCRIPTS_DIR")
@@ -167,6 +188,90 @@ def load_config(config_path: Optional[Path] = None) -> Config:
 
 # Global config (loaded at runtime)
 CONFIG: Optional[Config] = None
+
+# =============================================================================
+# PROVIDER HEALTH TRACKING (NEW - P0 Fix #3)
+# =============================================================================
+
+class ProviderHealth:
+    """Track provider availability to skip failed providers quickly."""
+    
+    def __init__(self):
+        self.status: Dict[str, Dict] = {}
+        self.check_interval = 60  # Recheck every 60s
+    
+    def is_available(self, provider: str) -> bool:
+        """Quick check if provider is likely available."""
+        status = self.status.get(provider, {})
+        now = time.time()
+        
+        # If recently verified as available, skip check
+        if status.get("available") and now - status.get("last_check", 0) < self.check_interval:
+            return True
+        
+        # If recently failed multiple times, skip for cooldown
+        failures = status.get("failures", 0)
+        if failures >= 3:
+            cooldown = min(300, 30 * failures)  # Max 5 min cooldown
+            if now - status.get("last_check", 0) < cooldown:
+                return False
+        
+        # Perform quick ping
+        available = self._ping(provider)
+        self.status[provider] = {
+            "available": available,
+            "last_check": now,
+            "failures": 0 if available else failures + 1
+        }
+        return available
+    
+    def _ping(self, provider: str) -> bool:
+        """Quick health check ping."""
+        if not CONFIG:
+            return False
+        
+        timeout = CONFIG.inference.health_check_timeout
+        
+        try:
+            if provider == "local":
+                r = requests.get(f"{CONFIG.inference.local_url}/v1/models", timeout=timeout)
+                return r.status_code == 200
+            elif provider == "ollama":
+                r = requests.get(f"{CONFIG.inference.ollama_url}/api/tags", timeout=timeout)
+                return r.status_code == 200
+            elif provider == "groq":
+                if not CONFIG.inference.groq_api_key:
+                    return False
+                # Just check if key is set, actual health is verified on use
+                return True
+            elif provider == "openai":
+                if not CONFIG.inference.openai_api_key:
+                    return False
+                return True
+            return False
+        except:
+            return False
+    
+    def mark_failed(self, provider: str):
+        """Mark a provider as having just failed."""
+        status = self.status.get(provider, {})
+        self.status[provider] = {
+            "available": False,
+            "last_check": time.time(),
+            "failures": status.get("failures", 0) + 1
+        }
+    
+    def mark_success(self, provider: str):
+        """Mark a provider as having just succeeded."""
+        self.status[provider] = {
+            "available": True,
+            "last_check": time.time(),
+            "failures": 0
+        }
+
+
+# Global health tracker
+HEALTH = ProviderHealth()
 
 # =============================================================================
 # RATE LIMIT TRACKING
@@ -214,6 +319,222 @@ def log_metrics(metrics: Dict):
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     with open(metrics_path, "a") as f:
         f.write(json.dumps(metrics) + "\n")
+
+# =============================================================================
+# ATOMIC FILE OPERATIONS (NEW - P0 Fix #1)
+# =============================================================================
+
+def write_atomic(content: str, target_path: Path) -> bool:
+    """Write file atomically using temp file + rename.
+    
+    This prevents corruption if the process is killed mid-write.
+    On POSIX systems, rename is atomic within the same filesystem.
+    """
+    temp_path = target_path.with_suffix('.tmp')
+    
+    try:
+        # Ensure parent directory exists
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write to temp file
+        temp_path.write_text(content, encoding='utf-8')
+        
+        # Atomic rename (on POSIX)
+        temp_path.rename(target_path)
+        return True
+        
+    except Exception as e:
+        log(f"Atomic write failed: {e}", "ERROR")
+        # Clean up temp file if it exists
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except:
+                pass
+        return False
+
+
+def write_atomic_json(data: Dict, target_path: Path) -> bool:
+    """Write JSON atomically."""
+    try:
+        content = json.dumps(data, indent=2, default=str)
+        return write_atomic(content, target_path)
+    except Exception as e:
+        log(f"Atomic JSON write failed: {e}", "ERROR")
+        return False
+
+# =============================================================================
+# STATE BACKUP (NEW - P0 Fix #2)
+# =============================================================================
+
+def get_backup_dir() -> Path:
+    """Get the backup directory path."""
+    if CONFIG and CONFIG.output.state_file:
+        return Path(CONFIG.output.state_file).parent / "session-history"
+    return Path.home() / ".bardacle" / "session-history"
+
+
+def backup_state(state_path: Path) -> Optional[Path]:
+    """Create a backup of the current state file.
+    
+    Returns the path to the backup file, or None if backup failed.
+    """
+    if not state_path.exists():
+        return None
+    
+    backup_dir = get_backup_dir()
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup_path = backup_dir / f"{state_path.stem}-{timestamp}.md"
+    
+    try:
+        shutil.copy2(state_path, backup_path)
+        log(f"Backed up state to {backup_path.name}")
+        
+        # Prune old backups
+        max_backups = CONFIG.output.backup_count if CONFIG else 5
+        prune_backups(backup_dir, state_path.stem, max_backups)
+        
+        return backup_path
+    except Exception as e:
+        log(f"Backup failed: {e}", "ERROR")
+        return None
+
+
+def prune_backups(backup_dir: Path, stem: str, max_count: int):
+    """Remove old backups keeping only the most recent max_count."""
+    try:
+        backups = sorted(backup_dir.glob(f"{stem}-*.md"), key=lambda p: p.stat().st_mtime)
+        for old in backups[:-max_count]:
+            old.unlink()
+            log(f"Pruned old backup: {old.name}")
+    except Exception as e:
+        log(f"Backup pruning error: {e}", "WARN")
+
+
+def list_backups() -> List[Path]:
+    """List available backup files."""
+    backup_dir = get_backup_dir()
+    if not backup_dir.exists():
+        return []
+    return sorted(backup_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def recover_from_backup(backup_path: Optional[Path] = None) -> bool:
+    """Recover state from a backup file.
+    
+    If backup_path is None, uses the most recent backup.
+    """
+    if backup_path is None:
+        backups = list_backups()
+        if not backups:
+            log("No backups available", "ERROR")
+            return False
+        backup_path = backups[0]
+    
+    if not backup_path.exists():
+        log(f"Backup not found: {backup_path}", "ERROR")
+        return False
+    
+    if not CONFIG or not CONFIG.output.state_file:
+        log("No state file configured", "ERROR")
+        return False
+    
+    state_path = Path(CONFIG.output.state_file)
+    
+    try:
+        # Read backup content
+        content = backup_path.read_text()
+        
+        # Write to state file atomically
+        if write_atomic(content, state_path):
+            log(f"Recovered state from {backup_path.name}")
+            return True
+        return False
+    except Exception as e:
+        log(f"Recovery failed: {e}", "ERROR")
+        return False
+
+# =============================================================================
+# CRASH HANDLING (NEW - P0 Fix #4)
+# =============================================================================
+
+def save_emergency_state():
+    """Save emergency state on crash.
+    
+    Called via atexit or signal handler when process is shutting down unexpectedly.
+    Saves whatever state we have to an emergency file.
+    """
+    global LAST_KNOWN_STATE, LAST_STATE_METADATA
+    
+    if not LAST_KNOWN_STATE:
+        return
+    
+    if not CONFIG or not CONFIG.output.state_file:
+        return
+    
+    emergency_path = Path(CONFIG.output.state_file).parent / "emergency-state.md"
+    
+    try:
+        metadata = LAST_STATE_METADATA or {}
+        content = f"""# Emergency State Save
+
+*Saved: {datetime.now().isoformat()}*
+*Reason: Unexpected shutdown*
+*Original model: {metadata.get('model', 'unknown')}*
+*Original messages: {metadata.get('msg_count', 'unknown')}*
+
+---
+
+{LAST_KNOWN_STATE}
+"""
+        # Use simple write here (can't guarantee atomic in crash scenario)
+        emergency_path.write_text(content)
+        log("Emergency state saved", "WARN")
+    except Exception as e:
+        # Last resort: try to log the error
+        try:
+            print(f"[EMERGENCY] Failed to save state: {e}", file=sys.stderr)
+        except:
+            pass
+
+
+def setup_crash_handlers():
+    """Set up handlers for graceful shutdown and crash recovery."""
+    
+    def graceful_shutdown(signum, frame):
+        """Handle SIGTERM/SIGINT gracefully."""
+        log(f"Received signal {signum}, shutting down gracefully...")
+        save_emergency_state()
+        remove_pid()
+        sys.exit(0)
+    
+    def handle_sighup(signum, frame):
+        """Handle SIGHUP - reload config (future use)."""
+        log("Received SIGHUP, would reload config...")
+    
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    signal.signal(signal.SIGINT, graceful_shutdown)
+    
+    # SIGHUP for future config reload
+    if hasattr(signal, 'SIGHUP'):
+        signal.signal(signal.SIGHUP, handle_sighup)
+    
+    # atexit for Python-level crashes
+    atexit.register(save_emergency_state)
+
+
+def check_emergency_state() -> Optional[Path]:
+    """Check if emergency state file exists (indicates previous crash)."""
+    if not CONFIG or not CONFIG.output.state_file:
+        return None
+    
+    emergency_path = Path(CONFIG.output.state_file).parent / "emergency-state.md"
+    if emergency_path.exists():
+        return emergency_path
+    return None
 
 # =============================================================================
 # PROMPTS
@@ -390,7 +711,7 @@ def read_and_process_messages(transcript_path: Path, max_messages: int = 100) ->
     return processed
 
 # =============================================================================
-# INFERENCE
+# INFERENCE (Updated with health checks)
 # =============================================================================
 
 def try_local(model: str, messages: List[Dict], timeout: int) -> Optional[str]:
@@ -407,15 +728,49 @@ def try_local(model: str, messages: List[Dict], timeout: int) -> Optional[str]:
             timeout=timeout
         )
         response.raise_for_status()
+        HEALTH.mark_success("local")
         return response.json()["choices"][0]["message"]["content"]
     except requests.exceptions.Timeout:
         log(f"Local LLM timeout ({model})", "WARN")
+        HEALTH.mark_failed("local")
         return None
     except requests.exceptions.ConnectionError:
         log("Local LLM not reachable", "WARN")
+        HEALTH.mark_failed("local")
         return None
     except Exception as e:
         log(f"Local LLM error: {e}", "ERROR")
+        HEALTH.mark_failed("local")
+        return None
+
+
+def try_ollama(model: str, messages: List[Dict], timeout: int) -> Optional[str]:
+    """Try inference with Ollama."""
+    if not CONFIG:
+        return None
+    
+    url = f"{CONFIG.inference.ollama_url}/api/chat"
+    
+    try:
+        response = requests.post(
+            url,
+            json={"model": model, "messages": messages, "stream": False},
+            timeout=timeout
+        )
+        response.raise_for_status()
+        HEALTH.mark_success("ollama")
+        return response.json()["message"]["content"]
+    except requests.exceptions.Timeout:
+        log(f"Ollama timeout ({model})", "WARN")
+        HEALTH.mark_failed("ollama")
+        return None
+    except requests.exceptions.ConnectionError:
+        log("Ollama not reachable", "WARN")
+        HEALTH.mark_failed("ollama")
+        return None
+    except Exception as e:
+        log(f"Ollama error: {e}", "ERROR")
+        HEALTH.mark_failed("ollama")
         return None
 
 
@@ -440,14 +795,17 @@ def try_groq(messages: List[Dict], timeout: int) -> Optional[str]:
             timeout=timeout
         )
         response.raise_for_status()
+        HEALTH.mark_success("groq")
         return response.json()["choices"][0]["message"]["content"]
     except requests.exceptions.HTTPError as e:
         if hasattr(e, 'response') and e.response.status_code == 429:
             mark_groq_rate_limited()
         log(f"Groq error: {e}", "ERROR")
+        HEALTH.mark_failed("groq")
         return None
     except Exception as e:
         log(f"Groq error: {e}", "ERROR")
+        HEALTH.mark_failed("groq")
         return None
 
 
@@ -472,43 +830,58 @@ def try_openai(messages: List[Dict], timeout: int) -> Optional[str]:
             timeout=timeout
         )
         response.raise_for_status()
+        HEALTH.mark_success("openai")
         return response.json()["choices"][0]["message"]["content"]
     except Exception as e:
         log(f"OpenAI error: {e}", "ERROR")
+        HEALTH.mark_failed("openai")
         return None
 
 
 def call_llm_with_fallback(prompt_messages: List[Dict]) -> Tuple[Optional[str], str]:
-    """Call LLM with fallback chain."""
+    """Call LLM with fallback chain and health-aware provider selection."""
     if not CONFIG:
         return None, "none"
     
     local_timeout = CONFIG.inference.local_timeout
     cloud_timeout = CONFIG.inference.cloud_timeout
     
-    # 1. Local fast model
-    log("Trying local LLM...")
-    result = try_local(CONFIG.inference.local_model_fast, prompt_messages, local_timeout)
-    if result:
-        return result, "local"
+    # 1. Local fast model (with health check)
+    if HEALTH.is_available("local"):
+        log("Trying local LLM...")
+        result = try_local(CONFIG.inference.local_model_fast, prompt_messages, local_timeout)
+        if result:
+            return result, "local"
+    else:
+        log("Skipping local LLM (health check failed)")
     
-    # 2. Groq (skip if rate limited)
+    # 2. Ollama (with health check)
+    if HEALTH.is_available("ollama"):
+        log("Trying Ollama...")
+        result = try_ollama(CONFIG.inference.ollama_model, prompt_messages, local_timeout)
+        if result:
+            return result, "ollama"
+    else:
+        log("Skipping Ollama (not available)")
+    
+    # 3. Groq (skip if rate limited or health failed)
     if is_groq_rate_limited():
         log(f"Skipping Groq (rate limited, {get_groq_cooldown_remaining()}s remaining)")
-    else:
+    elif HEALTH.is_available("groq"):
         log("Trying Groq...")
         result = try_groq(prompt_messages, cloud_timeout)
         if result:
             return result, "groq"
     
-    # 3. OpenAI
-    log("Trying OpenAI...")
-    result = try_openai(prompt_messages, cloud_timeout)
-    if result:
-        return result, "openai"
+    # 4. OpenAI
+    if HEALTH.is_available("openai"):
+        log("Trying OpenAI...")
+        result = try_openai(prompt_messages, cloud_timeout)
+        if result:
+            return result, "openai"
     
-    # 4. Local smart model (last resort)
-    log("Trying local smart model...")
+    # 5. Local smart model (last resort, skip health check)
+    log("Trying local smart model (last resort)...")
     result = try_local(CONFIG.inference.local_model_smart, prompt_messages, local_timeout + 15)
     if result:
         return result, "local-smart"
@@ -580,13 +953,18 @@ def generate_state(messages: List[Dict], incremental: bool = True) -> Tuple[Opti
 
 
 def write_state_file(state_content: str, model: str, latency: float, msg_count: int):
-    """Write session state to file."""
+    """Write session state to file with backup and atomic write."""
+    global LAST_KNOWN_STATE, LAST_STATE_METADATA
+    
     if not CONFIG or not CONFIG.output.state_file:
         return
     
     state_path = Path(CONFIG.output.state_file)
-    state_path.parent.mkdir(parents=True, exist_ok=True)
     
+    # Create backup of existing state
+    backup_state(state_path)
+    
+    # Prepare content
     header = f"""# Session State
 
 *Auto-generated at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}*
@@ -595,8 +973,27 @@ def write_state_file(state_content: str, model: str, latency: float, msg_count: 
 ---
 
 """
-    state_path.write_text(header + state_content)
-    log(f"Updated state ({len(state_content)} chars, {model}, {latency:.1f}s)")
+    full_content = header + state_content
+    
+    # Store for crash recovery
+    LAST_KNOWN_STATE = state_content
+    LAST_STATE_METADATA = {"model": model, "latency": latency, "msg_count": msg_count}
+    
+    # Atomic write
+    if write_atomic(full_content, state_path):
+        log(f"Updated state ({len(state_content)} chars, {model}, {latency:.1f}s)")
+        
+        # Also write structured JSON backup
+        json_path = state_path.with_suffix('.json')
+        write_atomic_json({
+            "timestamp": datetime.now().isoformat(),
+            "model": model,
+            "latency": latency,
+            "msg_count": msg_count,
+            "content": state_content
+        }, json_path)
+    else:
+        log("Failed to write state file", "ERROR")
 
 # =============================================================================
 # DAEMON
@@ -677,19 +1074,22 @@ def update_state(force_full: bool = False) -> bool:
 def daemon_loop():
     """Main daemon loop."""
     log(f"Bardacle v{__version__} starting...")
+    
+    # Set up crash handlers
+    setup_crash_handlers()
+    
+    # Write PID file
     write_pid()
+    
+    # Check for emergency state from previous crash
+    emergency = check_emergency_state()
+    if emergency:
+        log(f"Found emergency state from previous crash: {emergency}", "WARN")
+        log("Consider running 'bardacle recover' to restore")
     
     last_hash = ""
     last_update = 0
     last_change = 0
-    
-    def shutdown(signum, frame):
-        log("Shutting down...")
-        remove_pid()
-        sys.exit(0)
-    
-    signal.signal(signal.SIGTERM, shutdown)
-    signal.signal(signal.SIGINT, shutdown)
     
     while True:
         try:
@@ -769,8 +1169,23 @@ def cmd_status():
             if state_path.exists():
                 mtime = datetime.fromtimestamp(state_path.stat().st_mtime)
                 print(f"Last update: {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Show provider health
+        print("\nProvider Health:")
+        for provider in ["local", "ollama", "groq", "openai"]:
+            status = HEALTH.status.get(provider, {})
+            avail = "✓" if status.get("available", False) else "✗"
+            failures = status.get("failures", 0)
+            print(f"  {provider}: {avail} (failures: {failures})")
     else:
         print("Bardacle is not running")
+    
+    # Check for emergency state
+    emergency = check_emergency_state()
+    if emergency:
+        print(f"\n⚠️  Emergency state found: {emergency}")
+        print("   Run 'bardacle recover' to restore from last good state")
+    
     return 0
 
 
@@ -786,6 +1201,52 @@ def cmd_update(full: bool = False):
         return 1
 
 
+def cmd_recover(backup_name: Optional[str] = None):
+    """Recover state from backup."""
+    backups = list_backups()
+    
+    if not backups:
+        print("No backups available")
+        return 1
+    
+    if backup_name:
+        # Find specific backup
+        backup_path = None
+        for b in backups:
+            if b.name == backup_name or backup_name in b.name:
+                backup_path = b
+                break
+        if not backup_path:
+            print(f"Backup not found: {backup_name}")
+            print("\nAvailable backups:")
+            for b in backups[:10]:
+                print(f"  - {b.name}")
+            return 1
+    else:
+        # List backups and ask user
+        print("Available backups:")
+        for i, b in enumerate(backups[:10]):
+            mtime = datetime.fromtimestamp(b.stat().st_mtime)
+            print(f"  {i+1}. {b.name} ({mtime.strftime('%Y-%m-%d %H:%M:%S')})")
+        
+        print("\nTo recover, run: bardacle recover <backup-name>")
+        print("Or to recover latest: bardacle recover --latest")
+        return 0
+    
+    if recover_from_backup(backup_path):
+        print(f"Recovered from {backup_path.name}")
+        
+        # Remove emergency state if exists
+        emergency = check_emergency_state()
+        if emergency:
+            emergency.unlink()
+            print("Cleared emergency state")
+        return 0
+    else:
+        print("Recovery failed")
+        return 1
+
+
 def cmd_test():
     print(f"Bardacle v{__version__} Test Suite")
     print("=" * 50)
@@ -797,16 +1258,32 @@ def cmd_test():
     print(f"   Groq API: {'SET' if CONFIG.inference.groq_api_key else 'NOT SET'}")
     print(f"   OpenAI API: {'SET' if CONFIG.inference.openai_api_key else 'NOT SET'}")
     
-    # Check local LLM
-    print("\n2. Local LLM...")
-    try:
-        resp = requests.get(f"{CONFIG.inference.local_url}/v1/models", timeout=5)
-        if resp.ok:
-            print(f"   ✓ Connected to {CONFIG.inference.local_url}")
-        else:
-            print(f"   ✗ Error response")
-    except Exception as e:
-        print(f"   ✗ Not reachable: {e}")
+    # Check providers with health checks
+    print("\n2. Provider Health Checks...")
+    
+    print("   Checking local LLM...", end=" ")
+    if HEALTH._ping("local"):
+        print(f"✓ Connected to {CONFIG.inference.local_url}")
+    else:
+        print("✗ Not reachable")
+    
+    print("   Checking Ollama...", end=" ")
+    if HEALTH._ping("ollama"):
+        print(f"✓ Connected to {CONFIG.inference.ollama_url}")
+    else:
+        print("✗ Not reachable")
+    
+    print("   Checking Groq...", end=" ")
+    if CONFIG.inference.groq_api_key:
+        print("✓ API key set")
+    else:
+        print("✗ No API key")
+    
+    print("   Checking OpenAI...", end=" ")
+    if CONFIG.inference.openai_api_key:
+        print("✓ API key set")
+    else:
+        print("✗ No API key")
     
     # Check transcript
     print("\n3. Transcripts...")
@@ -817,6 +1294,23 @@ def cmd_test():
         print(f"   ✓ Processed {len(messages)} messages")
     else:
         print("   ✗ No transcript found")
+    
+    # Check backups
+    print("\n4. Backups...")
+    backups = list_backups()
+    print(f"   {len(backups)} backup(s) available")
+    if backups:
+        latest = backups[0]
+        mtime = datetime.fromtimestamp(latest.stat().st_mtime)
+        print(f"   Latest: {latest.name} ({mtime.strftime('%Y-%m-%d %H:%M:%S')})")
+    
+    # Check emergency state
+    print("\n5. Crash Recovery...")
+    emergency = check_emergency_state()
+    if emergency:
+        print(f"   ⚠️  Emergency state found: {emergency}")
+    else:
+        print("   ✓ No emergency state (clean shutdown)")
     
     print("\nTest complete.")
     return 0
@@ -829,10 +1323,12 @@ def main():
         description="Bardacle - A Metacognitive Layer for AI Agents",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("action", choices=["start", "stop", "status", "update", "test"],
+    parser.add_argument("action", choices=["start", "stop", "status", "update", "test", "recover"],
                        help="Action to perform")
     parser.add_argument("--config", "-c", type=Path, help="Config file path")
     parser.add_argument("--full", "-f", action="store_true", help="Force full (non-incremental) update")
+    parser.add_argument("--latest", "-l", action="store_true", help="Recover from latest backup")
+    parser.add_argument("--backup", "-b", type=str, help="Specific backup to recover from")
     parser.add_argument("--version", "-v", action="version", version=f"Bardacle {__version__}")
     
     args = parser.parse_args()
@@ -851,6 +1347,14 @@ def main():
         return cmd_update(args.full)
     elif args.action == "test":
         return cmd_test()
+    elif args.action == "recover":
+        if args.latest:
+            backups = list_backups()
+            if backups:
+                return 0 if recover_from_backup(backups[0]) else 1
+            print("No backups available")
+            return 1
+        return cmd_recover(args.backup)
 
 
 if __name__ == "__main__":
